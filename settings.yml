@@ -1,0 +1,123 @@
+# ============================================================
+# SearXNG settings.yml — Render 免费档专用（512MB）
+# 整理日期：2026-10-22
+# 依据：SearXNG 官方文档 docs.searxng.org + 官方镜像源码
+#      （container/Dockerfile、container/entrypoint.sh、
+#        searx/settings_loader.py、searx/webapp.py、searx/settings.yml）
+#
+# 相对原指南草稿的修正（逐条经官方源码/文档核实）：
+#   1. search.max_search_time 不存在 -> 改用 outgoing.request_timeout
+#   2. search.lang 不存在 -> 更正为 search.default_lang
+#   3. server.metrics 不存在 -> 指标开关在 general.enable_metrics
+#   4. ui.theme 不存在 -> 更正为 ui.default_theme
+#   5. ui.infinite_scroll 不存在 -> 无限滚动是插件（见下方 plugins 段）
+#   6. botdetection 段已从 settings.yml 移除 -> 限流配置在 /etc/searxng/limiter.toml
+#   7. server.limiter 强依赖 valkey 数据库，Render 免费档没有 -> 关闭
+#      （原指南的 SEARXNG_LIMITER_ENABLED 环境变量在 SearXNG 里根本不存在）
+#   8. 原稿 "zh-CN" 用了非 ASCII 连字符(U+2011)，已改为 ASCII 连字符
+#   9. ${SEARXNG_SECRET} / ${SEARXNG_BASE_URL} 由 entrypoint.sh 在容器
+#      启动前替换为 Render 环境变量的值（SearXNG 核心自身不做这个插值）
+# ============================================================
+
+use_default_settings:
+  # 只保留 5 个引擎：官方默认引擎约 200 个（多数默认关闭），
+  # 加载的引擎越少，启动越快、内存越稳（免费档 512MB，牢记 7-20 hermes 的 OOM 教训）。
+  # google 不在此白名单 = 完全不加载（Render 出口公网 IP 跑 Google 必被 429）。
+  engines:
+    keep_only:
+      - bing
+      - duckduckgo
+      - brave
+      - wikipedia
+      - github
+
+general:
+  debug: false
+  instance_name: "SearXNG-Render-Free"
+  # 指标默认就是关闭的（open_metrics 为空时 /metrics 返回 404），这里显式关闭
+  enable_metrics: false
+
+search:
+  safe_search: 0            # 0=不过滤，1=中等，2=严格
+  default_lang: "zh-CN"     # 默认搜索语言，合法代码见 searx/sxng_locales.py（带连字符）
+  formats:
+    - html
+    - json                  # 开启 JSON 接口（原指南的 curl 测试用）
+
+outgoing:
+  # 原指南的 max_search_time: 8 是无效字段，这两个才是真实的超时旋钮：
+  #   request_timeout     = 每个引擎单次 HTTP 请求超时（官方默认 3.0）
+  #   max_request_timeout = 引擎自定义 timeout 的上限（代码默认 10.0）
+  request_timeout: 6.0
+  max_request_timeout: 8.0
+
+server:
+  # ↓↓↓ 下面 secret_key / base_url 两行由 entrypoint.sh 在容器启动时【按整行替换】，
+  # 请勿改动这两行的缩进和写法；占位符内容本身无所谓，启动后会被改写。
+  #   - SEARXNG_SECRET 环境变量有值 -> 用该值（跨重启稳定，推荐）
+  #   - 未设置 -> 随机生成（重启即失效，cookie/偏好设置会掉）
+  # 注意：SearXNG 拒绝以 "ultrasecretkey" 字面量启动（webapp.py 会 sys.exit(1)）。
+  secret_key: "${SEARXNG_SECRET}"
+  # 限流需要 valkey 数据库（官方文档明确要求），Render 免费档没有 -> 关闭。
+  # 需要开启的方法见 README「后续可选：开启限流」一节。
+  limiter: false
+  public_instance: false
+  image_proxy: false
+  # 只影响网页表单的提交方式；GET 查询请求照样可用
+  # （webapp.py 中 /search 路由 GET/POST 都接收，原指南的 curl GET 测试不受影响）
+  method: "POST"
+  # 占位符：替换为环境变量 SEARXNG_BASE_URL；未设置则由 entrypoint.sh 删除该行，
+  # SearXNG 退回默认行为（base_url 未设置 -> 相对链接，Render 反代下可用）
+  base_url: "${SEARXNG_BASE_URL}"
+
+ui:
+  default_theme: simple
+  default_locale: zh_Hans_CN   # UI 语言简体中文，gettext locale 目录名（下划线格式）
+
+# plugins 段在 use_default_settings 下是【整体替换】而非逐键合并
+# （settings_loader.py: default_settings['plugins'] = plugins），
+# 所以这里把官方默认插件全部列出，仅把 infinite_scroll 打开，
+# 以此实现原指南 ui.infinite_scroll: true 的意图，且不丢失任何默认插件。
+plugins:
+  searx.plugins.calculator.SXNGPlugin:
+    active: true
+  searx.plugins.infinite_scroll.SXNGPlugin:
+    active: true
+  searx.plugins.hash_plugin.SXNGPlugin:
+    active: true
+  searx.plugins.self_info.SXNGPlugin:
+    active: true
+  searx.plugins.unit_converter.SXNGPlugin:
+    active: true
+  searx.plugins.ahmia_filter.SXNGPlugin:
+    active: true
+  searx.plugins.hostnames.SXNGPlugin:
+    active: true
+  searx.plugins.time_zone.SXNGPlugin:
+    active: true
+  searx.plugins.oa_doi_rewrite.SXNGPlugin:
+    active: false
+  searx.plugins.tor_check.SXNGPlugin:
+    active: false
+  searx.plugins.tracker_url_remover.SXNGPlugin:
+    active: true
+
+# 引擎微调：与上方 keep_only 白名单联动。
+# use_default_settings 下，这里的每条按 name 合并到官方默认引擎定义上
+# （settings_loader.py 的 engines 合并逻辑），所以只需写要改的键。
+engines:
+  - name: bing            # 官方默认 disabled: true，这里打开
+    disabled: false
+    weight: 1.0
+  - name: duckduckgo
+    disabled: false
+    weight: 1.0
+  - name: brave           # Render 出口 IP 下偶发 429/验证码，权重压低
+    disabled: false
+    weight: 0.7
+  - name: wikipedia
+    disabled: false
+    weight: 0.8
+  - name: github
+    disabled: false
+    weight: 0.6
