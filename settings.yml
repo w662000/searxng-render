@@ -72,7 +72,10 @@ server:
 
 ui:
   default_theme: simple
-  default_locale: zh_Hans_CN   # UI 语言简体中文，gettext locale 目录名（下划线格式）
+  # UI 语言简体中文。合法值来自 searx/data/locales.json 的 LOCALE_NAMES 键，
+  # 中文只有三个：zh-HK / zh-Hans-CN / zh-Hant-TW（连字符，勿写成下划线 zh_Hans_CN，
+  # 那是 gettext 翻译目录名，会被 preferences 校验拒绝导致每个请求 500）
+  default_locale: zh-Hans-CN
 
 # plugins 段在 use_default_settings 下是【整体替换】而非逐键合并
 # （settings_loader.py: default_settings['plugins'] = plugins），
