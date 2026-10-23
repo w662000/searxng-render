@@ -10,30 +10,29 @@ use_default_settings:
   # 只保留 4 个引擎。官方默认引擎约 200 个（多数默认关闭），
   # 加载的引擎越少，启动越快、内存越稳（免费档 512MB）。
   #
-  # 2026-10-23 第二轮换血依据（线上实测 https://searxng-render-gn0d.onrender.com，
-  # 查询词「小规模纳税人 月销售额 10 万元以下 免征增值税」，逐引擎强制单跑）：
-  #   - brave    ：n=20，其中 15 条是 .gov.cn 官方站点，且直接返回
-  #               chinatax.gov.cn 与福建税局的政策原文 —— 中文政策检索的**唯一有效来源**。
+  # 2026-10-23 第三轮换血依据（用户指定 brave/startpage/wikipedia/qwant 四件套）：
+  #   - brave    ：n=20 其中 15 条是 .gov.cn 官方站点，直接返回 chinatax.gov.cn
+  #               政策原文 —— 中文政策检索的**唯一有效来源**。
   #               缺点是第 2~3 次查询即被限流「请求过于频繁」。
-  #   - bing     ：n=10 全中文，但 0 条官方，返回的是 vkvideo.ru 俄语视频垃圾
-  #               （与税务毫无关系）。保留只为补覆盖面，权重压低。
-  #   - baidu    ：中文覆盖最好。⚠️ 上一轮实测发现它**在当前配置里并未启用**：
-  #               请求 engines=baidu 返回的结果 engines_seen 全是 bing
-  #               （未启用的引擎名被 SearXNG 静默忽略，回退默认集）。
-  #               本轮显式加进 keep_only 让它真正生效。
-  #   - wikipedia：稳定、几乎不被限流，但中文政策查询返回 0 条；事实型断言仍有价值。
-  #   - duckduckgo：实测持续「超时」（两次查询均在 unresponsive_engines 里）→ 弃用
-  #   - github   ：与事实核查无关，省内存 → 弃用
+  #   - startpage：Google 结果的隐私代理（SearXNG 内置、无需 API key），
+  #               补上用不了 Google（机房 IP 必 CAPTCHA）留下的通用/事实检索盲区，
+  #               且设计为抗封锁、限流温和。
+  #   - wikipedia：稳定、几乎不被限流；事实型断言兜底（中文政策查询返回 0 条）。
+  #   - qwant    ：欧盟引擎（自有索引 + Bing 混合，内置、无需 key），稳定不限流；
+  #               对中文政策贡献有限，但作为第二通用源扩覆盖。
+  #   - 已移除 bing（中文政策查询出 vkvideo.ru 俄语视频垃圾）、baidu
+  #     （机房 IP 被百度风控出验证码，中文结果不稳定）。
+  #   - duckduckgo：实测持续「超时」（两次查询均在 unresponsive_engines）→ 弃用
   #   - google   ：机房出口 IP 必被 CAPTCHA/429，从不加载
   #
-  # 权重按实测质量排：brave 最高（唯一出官方政策原文），baidu 次之（中文覆盖），
-  # wikipedia 稳定兜底，bing 最低（中文政策查询出垃圾）。
+  # 权重：brave 1.0（唯一官方政策源）> startpage 0.9（Google 级相关性）
+  #   > qwant 0.8（稳定通用）> wikipedia 0.7（稳定兜底）。
   engines:
     keep_only:
       - brave
-      - baidu
+      - startpage
       - wikipedia
-      - bing
+      - qwant
 
 general:
   debug: false
@@ -128,18 +127,18 @@ engines:
   - name: brave           # 中文政策检索唯一有效来源（15/20 官方），但易被限流
     disabled: false
     weight: 1.0
-  - name: baidu           # 中文覆盖最好；上一轮实测发现它其实没被启用，本轮显式加入
+  - name: startpage       # Google 结果隐私代理（内置、无 key），补通用/事实检索盲区
     disabled: false
     weight: 0.9
-  - name: wikipedia       # 稳定、几乎不被限流；中文政策查询返回 0 条，事实型断言仍有价值
+  - name: wikipedia       # 稳定、几乎不被限流；事实型断言兜底
     disabled: false
     weight: 0.7
-  - name: bing            # 覆盖面广但中文政策查询出俄语视频垃圾，权重压低
+  - name: qwant           # 欧盟引擎（内置、无 key），稳定不限流，第二通用源
     disabled: false
-    weight: 0.5
+    weight: 0.8
 
 # ============================================================
-# 本轮修改依据（2026-10-23 第二轮）
+# 本轮修改依据（2026-10-23 第二/三轮）
 #
 # 已废弃的写法（均非 SearXNG 合法字段，写了静默失效）：
 #   search.lang              -> search.default_lang
@@ -152,10 +151,13 @@ engines:
 #   server.limiter: true     -> 强依赖 valkey，Render 免费档没有，开不了
 #   SEARXNG_LIMITER_ENABLED  -> 该环境变量在 SearXNG 中不存在
 #
-# 引擎换血第二轮（用户指定 bing/brave/wikipedia/baidu 四件套）：
-#   新增 bing（补覆盖面，权重 0.5 —— 中文政策查询出垃圾）；
-#   移除 mojeek（独立爬虫，实测对中文政策查询无贡献）。
-#   权重按实测质量重排：brave 1.0 > baidu 0.9 > wikipedia 0.7 > bing 0.5。
+# 引擎换血第三轮（用户指定 brave/startpage/wikipedia/qwant 四件套）：
+#   新增 startpage（Google 隐私代理，权重 0.9，补通用/事实检索盲区）；
+#   新增 qwant（欧盟引擎，权重 0.8，稳定通用第二源）；
+#   移除 bing（中文政策查询出 vkvideo.ru 俄语视频垃圾）、baidu（机房 IP 被百度风控出验证码）；
+#   权重重排：brave 1.0 > startpage 0.9 > qwant 0.8 > wikipedia 0.7。
+#   注：startpage/qwant 均为 SearXNG 内置、无需 API key 的引擎；qwant 默认 disabled，
+#       靠本段 disabled:false 显式启用（否则被静默忽略）。
 #
 # ⚠️ 两个实测得来的判据（改引擎前必读）：
 #   1. engines 查询参数【是生效的】，但【未启用的引擎名会被静默忽略】并回退默认集。
