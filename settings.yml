@@ -31,9 +31,19 @@ use_default_settings:
   engines:
     keep_only:
       - brave
-      - startpage
       - wikipedia
+      - startpage
       - mojeek
+      - qwant
+      - bing
+      - duckduckgo
+      - ecosia
+      - baidu
+      - yahoo
+      - yandex
+      - wikidata
+      - wikibooks
+      - marginalia
 
 general:
   debug: false
@@ -125,18 +135,48 @@ plugins:
 #   brave 是唯一能返回 .gov.cn 政策原文的引擎 → 权重最高，
 #   让它排在结果前面；被限流时由下面的熔断器 + Tavily 兜底，不拖垮核查链路。
 engines:
-  - name: brave           # 中文政策检索唯一有效来源（15/20 官方），但易被限流
+  - name: brave
     disabled: false
     weight: 1.0
-  - name: startpage       # Google 结果隐私代理（内置、无 key），补通用/事实检索盲区
+  - name: wikipedia
     disabled: false
-    weight: 0.9
-  - name: wikipedia       # 稳定、几乎不被限流；事实型断言兜底
+    weight: 1.0
+  - name: startpage
     disabled: false
-    weight: 0.7
-  - name: mojeek          # 英国独立索引（内置、无 key），稳定不限流，第二通用源
+    weight: 1.0
+  - name: mojeek
     disabled: false
-    weight: 0.8
+    weight: 1.0
+  - name: qwant
+    disabled: false
+    weight: 1.0
+  - name: bing
+    disabled: false
+    weight: 1.0
+  - name: duckduckgo
+    disabled: false
+    weight: 1.0
+  - name: ecosia
+    disabled: false
+    weight: 1.0
+  - name: baidu
+    disabled: false
+    weight: 1.0
+  - name: yahoo
+    disabled: false
+    weight: 1.0
+  - name: yandex
+    disabled: false
+    weight: 1.0
+  - name: wikidata
+    disabled: false
+    weight: 1.0
+  - name: wikibooks
+    disabled: false
+    weight: 1.0
+  - name: marginalia
+    disabled: false
+    weight: 1.0
 
 # ============================================================
 # 本轮修改依据（2026-10-23 第二/三轮）
