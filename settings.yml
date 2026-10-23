@@ -10,7 +10,7 @@ use_default_settings:
   # 只保留 4 个引擎。官方默认引擎约 200 个（多数默认关闭），
   # 加载的引擎越少，启动越快、内存越稳（免费档 512MB）。
   #
-  # 2026-10-23 第三轮换血依据（用户指定 brave/startpage/wikipedia/qwant 四件套）：
+  # 2026-10-23 第四轮换血依据（第三轮 qwant 被上游拒绝，用户改选 mojeek）：
   #   - brave    ：n=20 其中 15 条是 .gov.cn 官方站点，直接返回 chinatax.gov.cn
   #               政策原文 —— 中文政策检索的**唯一有效来源**。
   #               缺点是第 2~3 次查询即被限流「请求过于频繁」。
@@ -18,21 +18,22 @@ use_default_settings:
   #               补上用不了 Google（机房 IP 必 CAPTCHA）留下的通用/事实检索盲区，
   #               且设计为抗封锁、限流温和。
   #   - wikipedia：稳定、几乎不被限流；事实型断言兜底（中文政策查询返回 0 条）。
-  #   - qwant    ：欧盟引擎（自有索引 + Bing 混合，内置、无需 key），稳定不限流；
-  #               对中文政策贡献有限，但作为第二通用源扩覆盖。
+  #   - mojeek   ：英国独立爬虫索引（SearXNG 内置、无需 key），稳定不限流；
+  #               作为第二通用源扩覆盖。⚠️ 替下的 qwant 实测被上游「暂停服务: 拒绝访问」
+  #               （Qwant 拒绝 Render 机房 IP），在本部署下贡献 0 结果 → 弃用。
   #   - 已移除 bing（中文政策查询出 vkvideo.ru 俄语视频垃圾）、baidu
-  #     （机房 IP 被百度风控出验证码，中文结果不稳定）。
+  #     （机房 IP 被百度风控出验证码，中文结果不稳定）、qwant（上游拒绝）。
   #   - duckduckgo：实测持续「超时」（两次查询均在 unresponsive_engines）→ 弃用
   #   - google   ：机房出口 IP 必被 CAPTCHA/429，从不加载
   #
   # 权重：brave 1.0（唯一官方政策源）> startpage 0.9（Google 级相关性）
-  #   > qwant 0.8（稳定通用）> wikipedia 0.7（稳定兜底）。
+  #   > mojeek 0.8（稳定通用）> wikipedia 0.7（稳定兜底）。
   engines:
     keep_only:
       - brave
       - startpage
       - wikipedia
-      - qwant
+      - mojeek
 
 general:
   debug: false
@@ -133,7 +134,7 @@ engines:
   - name: wikipedia       # 稳定、几乎不被限流；事实型断言兜底
     disabled: false
     weight: 0.7
-  - name: qwant           # 欧盟引擎（内置、无 key），稳定不限流，第二通用源
+  - name: mojeek          # 英国独立索引（内置、无 key），稳定不限流，第二通用源
     disabled: false
     weight: 0.8
 
@@ -158,6 +159,13 @@ engines:
 #   权重重排：brave 1.0 > startpage 0.9 > qwant 0.8 > wikipedia 0.7。
 #   注：startpage/qwant 均为 SearXNG 内置、无需 API key 的引擎；qwant 默认 disabled，
 #       靠本段 disabled:false 显式启用（否则被静默忽略）。
+#
+# 引擎换血第四轮（qwant 被上游拒绝，用户改选 mojeek）：
+#   实测 qwant 在本部署下 unresponsive=[["qwant","暂停服务: 拒绝访问"]]
+#   （Qwant 拒绝 Render 机房 IP），贡献 0 结果 → 移除 qwant。
+#   新增 mojeek（英国独立爬虫索引，权重 0.8，内置、无需 key，稳定不限流），
+#   同样靠 disabled:false 显式启用（mojeek 默认 disabled）。
+#   权重重排：brave 1.0 > startpage 0.9 > mojeek 0.8 > wikipedia 0.7。
 #
 # ⚠️ 两个实测得来的判据（改引擎前必读）：
 #   1. engines 查询参数【是生效的】，但【未启用的引擎名会被静默忽略】并回退默认集。
