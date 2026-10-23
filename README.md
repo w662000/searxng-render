@@ -17,6 +17,7 @@
 | `Dockerfile` | 基于官方镜像 `docker.io/searxng/searxng:latest`，做 4 项 Render 适配（监听地址、端口、worker 数、密钥替换） |
 | `entrypoint.sh` | 容器启动前的预处理：按整行替换 settings.yml 里的 `secret_key`/`base_url`，导出 `GRANIAN_PORT=$PORT`（未注入时回落官方默认 10000），然后交接给官方入口 |
 | `settings.yml` | SearXNG 配置（禁用 Google、精简引擎、开 JSON 接口、简体中文界面） |
+| `mem_reporter.py` | 内存监控插件：同端口暴露 `/_mem`（网页，5 秒自刷）+ `/_mem.json`，盯 512MB 上限（Render 免费档 Metrics 看不了内存，见五-C） |
 | `README.md` | 本文件 |
 
 ## 二、为什么不是草稿里那份 Dockerfile（先说清楚，避免部署到一半踩雷）
@@ -148,6 +149,64 @@ curl "https://你的域名.onrender.com/stats/errors"
 6. **修改配置的流程**：改 GitHub 仓库里的 `settings.yml` → push → Render 自动重新部署
    （Auto Deploy 默认开）。改环境变量则在 Dashboard 里改，会触发重启。
 
+## 五-B、部署实战踩坑记录（2026-10-22 真实部署，Render 免费档）
+
+1. **域名后缀坑**：服务名 `searxng-render` 已被占用，Render 自动分配了
+   `searxng-render-gn0d.onrender.com`（带 `-gn0d` 随机后缀）。部署后必须以 Dashboard
+   显示的实际域名为准，`SEARXNG_BASE_URL` 填错只影响绝对链接，不影响搜索。
+2. **UI locale 坑（本次唯一故障，已修）**：`ui.default_locale` 写成 `zh_Hans_CN`
+   （下划线）会被 SearXNG 的 preferences 校验拒绝——
+   `ValidationException: Invalid value: "zh_Hans_CN"`，**每个请求都 500**，
+   连 `/healthz` 都挂， Render 健康检查失败导致部署卡在 "In progress" 最后
+   "Deploy failed"。合法值来自 `searx/data/locales.json` 的 `LOCALE_NAMES` 键，
+   中文只有三个：**`zh-HK` / `zh-Hans-CN` / `zh-Hant-TW`（连字符）**。
+   注意区分：`search.default_lang`（搜索语言）用 `zh-CN`，走 sxng_locales 校验，两套体系。
+3. **GitHub 网页编辑器坑**：CodeMirror 编辑器里用自动化 fill 会清空整个文件，
+   修配置优先用「上传文件」覆盖，不要在网页编辑器里灌全文。
+4. **Render 环境变量打码框坑**：值字段是 textarea 且打码，自动化 fill 会静默失败，
+   保存后务必回来看一眼实际值。
+5. **部署卡住先看 Logs**：本次从卡住到定位根因全靠 Render 的 Logs 页
+   （左侧 Monitor → Logs），报错栈直接指向 preferences.py 的 locale 校验。
+
+## 五-C、内存监控：Render 免费档怎么看内存会不会 OOM（2026-10-23 新增）
+
+**先说结论：Render 免费档的 Metrics 页面看不了内存。** Dashboard → 服务的 Metrics 页里，
+Memory/CPU 两个图表带 `PAID` 标，原文 "Upgrade to any paid compute plan to view
+application metrics like memory and CPU usage"——升级付费才给看，免费档只有网络带宽图。
+所以「打开网页看内存」这件事得自己造，本项目用 `mem_reporter.py` 插件解决。
+
+**用法**（部署后直接打开）：
+
+```
+https://searxng-render-gn0d.onrender.com/_mem        # 网页，每 5 秒自动刷新
+https://searxng-render-gn0d.onrender.com/_mem.json   # 同数据 JSON
+```
+
+页面显示：当前用量 / 512MB 上限 / 百分比 / 历史峰值 / 进程 RSS 合计，
+按百分比变色（<75% 绿，75-90% 橙，≥90% 红并弹出警告条）。
+
+**实现原理**（为什么这么做）：
+
+1. 用 SearXNG 官方插件机制，不新开服务、不动代理架构。`Plugin.init(self, app)`
+   能拿到 Flask app（源码：`searx/plugins/_core.py` + `webapp.py` 里的
+   `searx.plugins.initialize(app)`），在启动时把 `/_mem` 注册到 SearXNG 的
+   Flask app 上，和搜索共用同一个端口（Render 每个服务只转发一个端口）。
+2. 数据读 cgroup（`/sys/fs/cgroup/memory.current` + `memory.max`，v1/v2 兼容），
+   这是容器内存限额的真实来源——OOM Kill 就发生在触及 memory.max 时。
+   注意 cgroup 的 current **含可回收的 page cache**，所以百分比逼近 100% 才是危险区；
+   「进程 RSS 合计」是应用实际占用，供对照。
+3. `/_mem` 路径无 `format` 参数——日后若加 JSON 接口鉴权中间件，按其设计
+   （只拦 format=json/csv/rss 的搜索请求）也会直接放行，网页打开不需要 key。
+4. **为什么不建议再开一个监控服务**：750 小时/月是账号全局共享，一个实例 24 小时
+   就占 720 小时，第二个免费实例会开始计费；而且独立服务也看不到另一个容器的内部内存。
+
+**怎么用它判断 OOM 风险**：开着 `/_mem` 页面，同时连续打几次搜索（或让接入方
+并发查几条），看百分比能冲到多高、停下后回落到多少。冲高后能快速回落 = 安全；
+持续贴着 80%+ 不落 = 危险，按 README 第五节继续减引擎/确认单 worker。
+
+**真 OOM 了会怎样**：Render 会在 Events 页记 `Out of memory` 并重启实例，
+Logs 里容器进程直接消失。本端点的作用就是在那之前看到趋势。
+
 ## 六、后续可选
 
 - **开启限流（limiter）**：官方文档明确限流需要 valkey 数据库。Render 上有 Key Value
@@ -175,7 +234,7 @@ curl "https://你的域名.onrender.com/stats/errors"
 | `botdetection: limiter: true` | 新版 SearXNG 已把 botdetection 移出 settings.yml（改到 limiter.toml） | `server.limiter: false`（无 valkey 不开限流，见第六节） |
 | 环境变量 `SEARXNG_LIMITER_ENABLED` | SearXNG 无此变量 | 不设；限流走 `server.limiter` + valkey |
 | `secret_key: "${SEARXNG_SECRET}"` 直接靠插值 | SearXNG 核心不做插值，密钥会变成字面量 | entrypoint.sh 启动前替换，未设则随机生成 |
-| `"zh‑CN"`（非 ASCII 连字符） | U+2011 不可见字符，locale 匹配不上 | ASCII 连字符 `zh-CN`；UI locale 用 `zh_Hans_CN` |
+| `"zh‑CN"`（非 ASCII 连字符） | U+2011 不可见字符，locale 匹配不上 | ASCII 连字符 `zh-CN`；UI locale 正确值是 `zh-Hans-CN`（合法值仅 zh-HK / zh-Hans-CN / zh-Hant-TW，见五-B 第 2 条） |
 | 引擎列表只列 6 个（google disabled） | `use_default_settings` 下未列的引擎仍会加载 | `keep_only` 白名单，google 完全不加载 |
 | 健康检查未提及 | 休眠/重启时 TCP 探测太糙 | Health Check Path 填 `/healthz` |
 

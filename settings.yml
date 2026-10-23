@@ -104,6 +104,12 @@ plugins:
     active: false
   searx.plugins.tracker_url_remover.SXNGPlugin:
     active: true
+  # 内存监控（2026-10-23 新增）：Render 免费档 Dashboard 的 Metrics 页面
+  # 看不了内存/CPU（带 PAID 标，要升级付费套餐），只有网络带宽图。
+  # 自建插件在同端口暴露 /_mem（网页，5 秒自动刷新）和 /_mem.json，
+  # 数据读 cgroup，用来盯 512MB 上限会不会被搜索并发打爆导致 OOM。
+  searx.plugins.mem_reporter.SXNGPlugin:
+    active: true
 
 # 引擎微调：与上方 keep_only 白名单联动。
 # use_default_settings 下，这里的每条按 name 合并到官方默认引擎定义上

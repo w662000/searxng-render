@@ -19,6 +19,11 @@ FROM docker.io/searxng/searxng:latest
 # settings.yml 复制到官方镜像约定的配置路径（镜像内 __SEARXNG_SETTINGS_PATH 即此路径）
 COPY settings.yml /etc/searxng/settings.yml
 
+# 内存监控插件（2026-10-23 新增）：Render 免费档 Metrics 看不了内存（付费功能），
+# 用 SearXNG 官方插件机制（Plugin.init(app) 注册路由）在同端口暴露
+# /_mem 网页 + /_mem.json。详见 mem_reporter.py 与 README 五-C。
+COPY mem_reporter.py /usr/local/searxng/searx/plugins/mem_reporter.py
+
 # 启动前预处理脚本（替换密钥/域名占位符、导出 GRANIAN_PORT），
 # 做完后 exec 官方入口 /usr/local/searxng/entrypoint.sh，完全延续官方行为
 COPY entrypoint.sh /usr/local/searxng/render-entrypoint.sh
