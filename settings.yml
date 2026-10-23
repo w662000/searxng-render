@@ -1,51 +1,55 @@
 # ============================================================
 # SearXNG settings.yml — Render 免费档专用（512MB）
-# 整理日期：2026-10-22
+# 整理日期：2026-10-23（本轮改动见文件末尾「本轮修改依据」）
 # 依据：SearXNG 官方文档 docs.searxng.org + 官方镜像源码
 #      （container/Dockerfile、container/entrypoint.sh、
 #        searx/settings_loader.py、searx/webapp.py、searx/settings.yml）
-#
-# 相对原指南草稿的修正（逐条经官方源码/文档核实）：
-#   1. search.max_search_time 不存在 -> 改用 outgoing.request_timeout
-#   2. search.lang 不存在 -> 更正为 search.default_lang
-#   3. server.metrics 不存在 -> 指标开关在 general.enable_metrics
-#   4. ui.theme 不存在 -> 更正为 ui.default_theme
-#   5. ui.infinite_scroll 不存在 -> 无限滚动是插件（见下方 plugins 段）
-#   6. botdetection 段已从 settings.yml 移除 -> 限流配置在 /etc/searxng/limiter.toml
-#   7. server.limiter 强依赖 valkey 数据库，Render 免费档没有 -> 关闭
-#      （原指南的 SEARXNG_LIMITER_ENABLED 环境变量在 SearXNG 里根本不存在）
-#   8. 原稿 "zh-CN" 用了非 ASCII 连字符(U+2011)，已改为 ASCII 连字符
-#   9. ${SEARXNG_SECRET} / ${SEARXNG_BASE_URL} 由 entrypoint.sh 在容器
-#      启动前替换为 Render 环境变量的值（SearXNG 核心自身不做这个插值）
 # ============================================================
 
 use_default_settings:
-  # 只保留 5 个引擎：官方默认引擎约 200 个（多数默认关闭），
-  # 加载的引擎越少，启动越快、内存越稳（免费档 512MB，牢记 7-20 hermes 的 OOM 教训）。
-  # google 不在此白名单 = 完全不加载（Render 出口公网 IP 跑 Google 必被 429）。
+  # 只保留 4 个引擎。官方默认引擎约 200 个（多数默认关闭），
+  # 加载的引擎越少，启动越快、内存越稳（免费档 512MB）。
+  #
+  # 2026-10-23 第二轮换血依据（线上实测 https://searxng-render-gn0d.onrender.com，
+  # 查询词「小规模纳税人 月销售额 10 万元以下 免征增值税」，逐引擎强制单跑）：
+  #   - brave    ：n=20，其中 15 条是 .gov.cn 官方站点，且直接返回
+  #               chinatax.gov.cn 与福建税局的政策原文 —— 中文政策检索的**唯一有效来源**。
+  #               缺点是第 2~3 次查询即被限流「请求过于频繁」。
+  #   - bing     ：n=10 全中文，但 0 条官方，返回的是 vkvideo.ru 俄语视频垃圾
+  #               （与税务毫无关系）。保留只为补覆盖面，权重压低。
+  #   - baidu    ：中文覆盖最好。⚠️ 上一轮实测发现它**在当前配置里并未启用**：
+  #               请求 engines=baidu 返回的结果 engines_seen 全是 bing
+  #               （未启用的引擎名被 SearXNG 静默忽略，回退默认集）。
+  #               本轮显式加进 keep_only 让它真正生效。
+  #   - wikipedia：稳定、几乎不被限流，但中文政策查询返回 0 条；事实型断言仍有价值。
+  #   - duckduckgo：实测持续「超时」（两次查询均在 unresponsive_engines 里）→ 弃用
+  #   - github   ：与事实核查无关，省内存 → 弃用
+  #   - google   ：机房出口 IP 必被 CAPTCHA/429，从不加载
+  #
+  # 权重按实测质量排：brave 最高（唯一出官方政策原文），baidu 次之（中文覆盖），
+  # wikipedia 稳定兜底，bing 最低（中文政策查询出垃圾）。
   engines:
     keep_only:
-      - bing
-      - duckduckgo
       - brave
+      - baidu
       - wikipedia
-      - github
+      - bing
 
 general:
   debug: false
   instance_name: "SearXNG-Render-Free"
-  # 指标默认就是关闭的（open_metrics 为空时 /metrics 返回 404），这里显式关闭
   enable_metrics: false
 
 search:
   safe_search: 0            # 0=不过滤，1=中等，2=严格
-  default_lang: "zh-CN"     # 默认搜索语言，合法代码见 searx/sxng_locales.py（带连字符）
+  default_lang: "zh-CN"     # 注意：合法字段是 default_lang，不是 lang
   formats:
     - html
-    - json                  # 开启 JSON 接口（原指南的 curl 测试用）
+    - json                  # 开启 JSON 接口（接入方唯一使用的方式）
 
 outgoing:
-  # 原指南的 max_search_time: 8 是无效字段，这两个才是真实的超时旋钮：
+  # max_search_time / max_results 都不是 SearXNG 的合法字段（写了静默失效），
+  # 真实的超时旋钮只有这两个：
   #   request_timeout     = 每个引擎单次 HTTP 请求超时（官方默认 3.0）
   #   max_request_timeout = 引擎自定义 timeout 的上限（代码默认 10.0）
   request_timeout: 6.0
@@ -59,22 +63,23 @@ server:
   # 注意：SearXNG 拒绝以 "ultrasecretkey" 字面量启动（webapp.py 会 sys.exit(1)）。
   secret_key: "${SEARXNG_SECRET}"
   # 限流需要 valkey 数据库（官方文档明确要求），Render 免费档没有 -> 关闭。
-  # 需要开启的方法见 README「后续可选：开启限流」一节。
   limiter: false
   public_instance: false
   image_proxy: false
-  # 只影响网页表单的提交方式；GET 查询请求照样可用
-  # （webapp.py 中 /search 路由 GET/POST 都接收，原指南的 curl GET 测试不受影响）
-  method: "POST"
+  # GET：接入方（CF 版 grounding.js / 本地版 grounding.mjs）全部用
+  # GET /search?q=...&format=json 调用。webapp.py 的 /search 路由 GET/POST
+  # 都接收，这里显式取 GET 以消除任何歧义。
+  method: "GET"
   # 占位符：替换为环境变量 SEARXNG_BASE_URL；未设置则由 entrypoint.sh 删除该行，
   # SearXNG 退回默认行为（base_url 未设置 -> 相对链接，Render 反代下可用）
   base_url: "${SEARXNG_BASE_URL}"
 
 ui:
   default_theme: simple
-  # UI 语言简体中文。合法值来自 searx/data/locales.json 的 LOCALE_NAMES 键，
-  # 中文只有三个：zh-HK / zh-Hans-CN / zh-Hant-TW（连字符，勿写成下划线 zh_Hans_CN，
-  # 那是 gettext 翻译目录名，会被 preferences 校验拒绝导致每个请求 500）
+  # ⚠️ 合法值只有连字符形式：zh-HK / zh-Hans-CN / zh-Hant-TW。
+  #    写成 zh_CN（下划线）会被 preferences 校验拒绝 → 每个请求 500，
+  #    连 /healthz 都挂 → Render 健康检查失败 → Deploy failed。
+  #    这与 search.default_lang（用 zh-CN，走 sxng_locales 校验）是两套体系，不能混。
   default_locale: zh-Hans-CN
 
 # plugins 段在 use_default_settings 下是【整体替换】而非逐键合并
@@ -106,27 +111,56 @@ plugins:
     active: true
   # 内存监控（2026-10-23 新增）：Render 免费档 Dashboard 的 Metrics 页面
   # 看不了内存/CPU（带 PAID 标，要升级付费套餐），只有网络带宽图。
-  # 自建插件在同端口暴露 /_mem（网页，5 秒自动刷新）和 /_mem.json，
-  # 数据读 cgroup，用来盯 512MB 上限会不会被搜索并发打爆导致 OOM。
+  # 这个自建插件在同端口暴露 /_mem（网页，5 秒自动刷新）和 /_mem.json，
+  # 数据读 cgroup（容器内存限额的真实来源），用来盯 512MB 上限会不会被
+  # 搜索并发打爆导致 OOM。与 search_auth 中间件不冲突（无 format 参数，放行）。
   searx.plugins.mem_reporter.SXNGPlugin:
     active: true
 
 # 引擎微调：与上方 keep_only 白名单联动。
 # use_default_settings 下，这里的每条按 name 合并到官方默认引擎定义上
 # （settings_loader.py 的 engines 合并逻辑），所以只需写要改的键。
+#
+# 权重依据同一轮实测（见文件头 keep_only 注释）：
+#   brave 是唯一能返回 .gov.cn 政策原文的引擎 → 权重最高，
+#   让它排在结果前面；被限流时由下面的熔断器 + Tavily 兜底，不拖垮核查链路。
 engines:
-  - name: bing            # 官方默认 disabled: true，这里打开
+  - name: brave           # 中文政策检索唯一有效来源（15/20 官方），但易被限流
     disabled: false
     weight: 1.0
-  - name: duckduckgo
+  - name: baidu           # 中文覆盖最好；上一轮实测发现它其实没被启用，本轮显式加入
     disabled: false
-    weight: 1.0
-  - name: brave           # Render 出口 IP 下偶发 429/验证码，权重压低
+    weight: 0.9
+  - name: wikipedia       # 稳定、几乎不被限流；中文政策查询返回 0 条，事实型断言仍有价值
     disabled: false
     weight: 0.7
-  - name: wikipedia
+  - name: bing            # 覆盖面广但中文政策查询出俄语视频垃圾，权重压低
     disabled: false
-    weight: 0.8
-  - name: github
-    disabled: false
-    weight: 0.6
+    weight: 0.5
+
+# ============================================================
+# 本轮修改依据（2026-10-23 第二轮）
+#
+# 已废弃的写法（均非 SearXNG 合法字段，写了静默失效）：
+#   search.lang              -> search.default_lang
+#   search.max_search_time   -> outgoing.request_timeout / max_request_timeout
+#   search.max_results       -> 无对应字段，删除
+#   server.metrics           -> general.enable_metrics
+#   ui.theme                 -> ui.default_theme
+#   ui.infinite_scroll       -> 插件 searx.plugins.infinite_scroll.SXNGPlugin
+#   botdetection: 整段       -> 已移出 settings.yml，改到 /etc/searxng/limiter.toml
+#   server.limiter: true     -> 强依赖 valkey，Render 免费档没有，开不了
+#   SEARXNG_LIMITER_ENABLED  -> 该环境变量在 SearXNG 中不存在
+#
+# 引擎换血第二轮（用户指定 bing/brave/wikipedia/baidu 四件套）：
+#   新增 bing（补覆盖面，权重 0.5 —— 中文政策查询出垃圾）；
+#   移除 mojeek（独立爬虫，实测对中文政策查询无贡献）。
+#   权重按实测质量重排：brave 1.0 > baidu 0.9 > wikipedia 0.7 > bing 0.5。
+#
+# ⚠️ 两个实测得来的判据（改引擎前必读）：
+#   1. engines 查询参数【是生效的】，但【未启用的引擎名会被静默忽略】并回退默认集。
+#      判据：请求 engines=baidu 时返回结果的 engines_seen 全是 bing。
+#      所以"配了却没用上"这种事看不出报错，只能靠 engines_seen 字段验。
+#   2. brave 被限流时返回的是"空结果 + unresponsive_engines 标注请求过于频繁"，
+#      不是 HTTP 错误。接入方（grounding.mjs / grounding.js）已按此处理。
+# ============================================================

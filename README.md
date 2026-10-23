@@ -1,6 +1,6 @@
 # SearXNG 部署到 Render（免费档）— 完整操作指南
 
-> 整理日期：2026-10-22 ｜ 全程网页鼠标操作，不需要 SSH、不需要敲服务器命令
+> 整理日期：2026-10-23 ｜ 全程网页鼠标操作，不需要 SSH、不需要敲服务器命令
 > 前置条件：已有 Render 账号（用 GitHub 登录，无需信用卡）——你 7 月 20 日注册过，直接用
 >
 > 说明：最初的部署思路来自豆包版指南，**仅作参考**。本项目一切配置以 SearXNG 与
@@ -10,14 +10,15 @@
 
 ---
 
-## 一、文件清单（GitHub 仓库就放这 4 个文件，放仓库根目录）
+## 一、文件清单（GitHub 仓库根目录放这些文件）
 
 | 文件 | 作用 |
 |---|---|
-| `Dockerfile` | 基于官方镜像 `docker.io/searxng/searxng:latest`，做 4 项 Render 适配（监听地址、端口、worker 数、密钥替换） |
-| `entrypoint.sh` | 容器启动前的预处理：按整行替换 settings.yml 里的 `secret_key`/`base_url`，导出 `GRANIAN_PORT=$PORT`（未注入时回落官方默认 10000），然后交接给官方入口 |
-| `settings.yml` | SearXNG 配置（禁用 Google、精简引擎、开 JSON 接口、简体中文界面） |
-| `mem_reporter.py` | 内存监控插件：同端口暴露 `/_mem`（网页，5 秒自刷）+ `/_mem.json`，盯 512MB 上限（Render 免费档 Metrics 看不了内存，见五-C） |
+| `Dockerfile` | 基于官方镜像 `docker.io/searxng/searxng:latest`，做 5 项 Render 适配（监听地址、端口、worker 数、密钥替换、JSON 接口鉴权） |
+| `entrypoint.sh` | 容器启动前的预处理：按整行替换 settings.yml 里的 `secret_key`/`base_url`，导出 `GRANIAN_PORT=$PORT`（未注入时回落官方默认 10000），按需把官方入口的 granian 目标改写成带鉴权的 `search_auth:app`（fail-closed），然后交接给官方入口 |
+| `settings.yml` | SearXNG 配置（精简引擎、开 JSON 接口、简体中文界面、挂载内存监控插件） |
+| `search_auth.py` | JSON 接口鉴权中间件（WSGI）：`/search?format=json/csv/rss` 要求 `X-Search-Key`，html 全部放行。未设 `SEARXNG_API_KEY` 时完全放行 |
+| `mem_reporter.py` | 内存监控插件：在同端口暴露 `/_mem` 网页 + `/_mem.json`，读 cgroup 数据盯 512MB 上限（Render 免费档 Metrics 看不了内存） |
 | `README.md` | 本文件 |
 
 ## 二、为什么不是草稿里那份 Dockerfile（先说清楚，避免部署到一半踩雷）
@@ -95,6 +96,10 @@
 
 - 不需要填 `PORT`——Render 官方默认自动注入 `10000`，entrypoint.sh 直接读取；
   未注入时也按官方默认回落 10000，行为一致。
+- `SEARXNG_BASE_URL` **以创建后 Dashboard 显示的实际域名为准**：如果服务名被占用，
+  Render 会自动加随机后缀（本次实战：名字 `searxng-render` 被占，实际域名是
+  `searxng-render-gn0d.onrender.com`）。建完后先看服务页面顶部显示的域名再填/改这个变量；
+  填错只会影响绝对链接生成，不影响搜索功能，发现后改一下即可。
 - 不要加草稿里的 `SEARXNG_LIMITER_ENABLED`：SearXNG 没有这个环境变量，加了也没用
   （限流的正确打开方式见「六、后续可选」）。
 
@@ -117,11 +122,13 @@ curl "https://你的域名.onrender.com/healthz"
 # 2) JSON 搜索接口（原指南的测试命令，GET 可用）
 curl "https://你的域名.onrender.com/search?q=%E6%B5%8B%E8%AF%95&format=json"
 
-# 3) 看引擎加载情况（应只有 bing/duckduckgo/brave/wikipedia/github 五个，无 google）
+# 3) 看引擎加载情况（应只有 brave/baidu/wikipedia/bing 四个，无 google）
 curl "https://你的域名.onrender.com/config"
 
 # 4) 引擎报错监控（哪个引擎被 429/验证码了看这里）
 curl "https://你的域名.onrender.com/stats/errors"
+# 5) 内存监控（Render 免费档 Dashboard 看不了内存，自建端点；网页直接打开 /_mem 更直观）
+curl "https://你的域名.onrender.com/_mem.json"
 ```
 
 浏览器打开域名则是完整搜索页面（simple 主题、简体中文、无限滚动）。
@@ -139,11 +146,15 @@ curl "https://你的域名.onrender.com/stats/errors"
 
 1. **750 小时/月**：一个实例跑满整月约 720 小时，刚好够用——**不要同时开第二个免费实例**，
    第二个会开始按 $7/月左右计费（以 Render 官网当时价格为准）。
-2. **内存 512MB**：SearXNG 单 worker + 5 引擎的内存占用远低于 512MB（量级约一两百 MB，
-   具体以 Render 控制台 Metrics 面板实时显示为准），够用。
+2. **内存 512MB**：SearXNG 单 worker + 4 引擎的内存占用远低于 512MB（量级约一两百 MB，
+   具体以 Render 控制台 Metrics 面板实时显示为准，或用自建的 `/_mem.json` 盯），够用。
    这正是 7 月 20 日 hermes-webui（双进程合计 400MB+）OOM 反面的例子——轻量应用才适合免费档。
-3. **不要公开 JSON 接口**：`/search?format=json` 无鉴权，被爬虫刷爆会被 Render 限流停机。
-   只在自己的工具/脚本里用，别提在公开场合。
+3. **JSON 接口鉴权**：仓库里已有 `search_auth.py`（对 `format=json/csv/rss` 要求
+   `X-Search-Key`，html 放行），但**当前线上实例还没部署它**——2026-10-23 实测
+   裸 `GET /search?q=测试&format=json` 仍返回 200。部署后必须同时在 Render 面板设
+   `SEARXNG_API_KEY`，并把这个 key 配到两个 agent 系统（本地 `AGENT_TEAMS_SEARXNG_API_KEY`、
+   CF `wrangler secret put SEARXNG_API_KEY`）。**未设该环境变量时中间件完全放行**，
+   设了才生效——别以为推了代码就自动安全。
 4. **不要开 Google 引擎**：Render 出口是共享公网 IP，Google 必 429。配置里根本没加载它。
 5. **磁盘是临时的**：容器重启/重建后，favicon 缓存等会丢，配置无状态（配置在仓库里），不影响使用。
 6. **修改配置的流程**：改 GitHub 仓库里的 `settings.yml` → push → Render 自动重新部署
@@ -195,8 +206,8 @@ https://searxng-render-gn0d.onrender.com/_mem.json   # 同数据 JSON
    这是容器内存限额的真实来源——OOM Kill 就发生在触及 memory.max 时。
    注意 cgroup 的 current **含可回收的 page cache**，所以百分比逼近 100% 才是危险区；
    「进程 RSS 合计」是应用实际占用，供对照。
-3. `/_mem` 路径无 `format` 参数——日后若加 JSON 接口鉴权中间件，按其设计
-   （只拦 format=json/csv/rss 的搜索请求）也会直接放行，网页打开不需要 key。
+3. 不兼容 `search_auth` 中间件：`/_mem` 无 `format` 参数，按中间件设计直接放行，
+   网页打开不需要 key。
 4. **为什么不建议再开一个监控服务**：750 小时/月是账号全局共享，一个实例 24 小时
    就占 720 小时，第二个免费实例会开始计费；而且独立服务也看不到另一个容器的内部内存。
 
@@ -215,8 +226,39 @@ Logs 里容器进程直接消失。本端点的作用就是在那之前看到趋
   `limiter: true` 并加 `valkey: url: <内部URL>`，重启生效。个人自用场景不开也行。
 - **加引擎**：`settings.yml` 里 `keep_only` 列表加上名字即可（引擎按名字合并到官方默认
   定义上，内存代价很小，比如 `stackoverflow`、`arxiv`、`wikidata`、`mojeek`）。
+  ⚠️ 加之前先确认该引擎模块在**上游仓库真实存在**——已核实的坑：其他 AI 建议里的
+  `seekport`、`wiby`、`stackoverflow` 在 SearXNG 上游（252 个引擎模块）里**根本不存在**，
+  写进 `keep_only` 会被静默忽略、不报错。核实方法：
+  `curl -o /dev/null -w "%{http_code}" https://raw.githubusercontent.com/searxng/searxng/master/searx/engines/<名字>.py`
+  （200=存在，404=不存在）。
+- **验证引擎是否真被启用**：请求里带 `engines=<名字>`，看返回结果每条自带的
+  `engines` 字段（`engines_seen`）。**未启用的引擎名会被 SearXNG 静默忽略并回退默认集**，
+  不返回任何错误——2026-10-23 实测：`engines=baidu` 返回的 10 条结果 `engines_seen` 全是 `bing`，
+  说明 baidu 当时并未真正加载。
 - **恢复全部默认引擎**：删掉 `use_default_settings.engines.keep_only` 整段，
   再把 `engines` 段里 `- name: google / disabled: true` 加回去。
+
+## 六-B、引擎选择的实测依据（2026-10-23，查询词「小规模纳税人 月销售额 10 万元以下 免征增值税」）
+
+逐引擎强制单跑的结果，这是当前 `keep_only` 四件套与权重排序的唯一依据：
+
+| 引擎 | 结果数 | 其中 .gov.cn 官方 | 实测表现 |
+|---|---|---|---|
+| **brave** | 20 | **15** | 唯一返回政策原文的引擎，直接给出 `chinatax.gov.cn` 与福建税局原文。缺点是第 2~3 次查询即被限流「请求过于频繁」（表现为**空结果 + unresponsive_engines 标注**，不是 HTTP 错误） |
+| **bing** | 10 | 0 | 全中文但内容是 vkvideo.ru 俄语视频，与税务毫无关系。保留只为补覆盖面，权重压到 0.5 |
+| **baidu** | — | — | 中文覆盖最好，但**上一轮配置里没真正启用**（见上一节的 `engines_seen` 判据）。本轮显式加进 `keep_only` |
+| **wikipedia** | 0 | 0 | 稳定、几乎不被限流，但中文政策查询返回 0 条；事实型断言仍有价值 |
+| ~~duckduckgo~~ | 0 | 0 | 持续「超时」，两次查询都在 `unresponsive_engines` 里 → 弃用 |
+| ~~mojeek~~ | 10 | 0 | 与 bing 返回完全相同的结果（被静默忽略后回退），对中文政策无贡献 → 弃用 |
+| ~~github~~ | — | — | 与事实核查无关，省内存 → 弃用 |
+
+**权重结论**：brave 1.0 > baidu 0.9 > wikipedia 0.7 > bing 0.5。
+brave 排最高是因为它是唯一能出官方政策原文的；被限流时由接入方
+（`grounding.mjs` / `grounding.js`）的熔断器 + Tavily 兜底，不会拖垮核查链路。
+
+**与 AI 建议的矛盾（未解，需部署后观察）**：多份 AI 建议都要求"关掉 bing"（机房 IP 验证码风险），
+但实测中 **bing 是唯一稳定不出错的中文引擎**，brave 反而频繁限流。
+该矛盾无法在部署前判定，已用熔断器 + 备用搜索缓解；部署后按真实流量再调。
 
 ## 七、与豆包版指南的差异对照（为什么改；豆包版仅供参考，本表以官方文档为准）
 
@@ -234,7 +276,7 @@ Logs 里容器进程直接消失。本端点的作用就是在那之前看到趋
 | `botdetection: limiter: true` | 新版 SearXNG 已把 botdetection 移出 settings.yml（改到 limiter.toml） | `server.limiter: false`（无 valkey 不开限流，见第六节） |
 | 环境变量 `SEARXNG_LIMITER_ENABLED` | SearXNG 无此变量 | 不设；限流走 `server.limiter` + valkey |
 | `secret_key: "${SEARXNG_SECRET}"` 直接靠插值 | SearXNG 核心不做插值，密钥会变成字面量 | entrypoint.sh 启动前替换，未设则随机生成 |
-| `"zh‑CN"`（非 ASCII 连字符） | U+2011 不可见字符，locale 匹配不上 | ASCII 连字符 `zh-CN`；UI locale 正确值是 `zh-Hans-CN`（合法值仅 zh-HK / zh-Hans-CN / zh-Hant-TW，见五-B 第 2 条） |
+| `"zh‑CN"`（非 ASCII 连字符） | U+2011 不可见字符，locale 匹配不上 | ASCII 连字符 `zh-CN`；UI locale 用 `zh_Hans_CN` |
 | 引擎列表只列 6 个（google disabled） | `use_default_settings` 下未列的引擎仍会加载 | `keep_only` 白名单，google 完全不加载 |
 | 健康检查未提及 | 休眠/重启时 TCP 探测太糙 | Health Check Path 填 `/healthz` |
 
