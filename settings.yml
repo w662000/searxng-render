@@ -174,3 +174,4 @@ engines:
 #   2. brave 被限流时返回的是"空结果 + unresponsive_engines 标注请求过于频繁"，
 #      不是 HTTP 错误。接入方（grounding.mjs / grounding.js）已按此处理。
 # ============================================================
+# ci: retrigger Render deploy (no-op) — 2026-10-23 16:0x
