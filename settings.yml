@@ -10,40 +10,26 @@ use_default_settings:
   # 只保留 4 个引擎。官方默认引擎约 200 个（多数默认关闭），
   # 加载的引擎越少，启动越快、内存越稳（免费档 512MB）。
   #
-  # 2026-10-23 第四轮换血依据（第三轮 qwant 被上游拒绝，用户改选 mojeek）：
-  #   - brave    ：n=20 其中 15 条是 .gov.cn 官方站点，直接返回 chinatax.gov.cn
-  #               政策原文 —— 中文政策检索的**唯一有效来源**。
-  #               缺点是第 2~3 次查询即被限流「请求过于频繁」。
-  #   - startpage：Google 结果的隐私代理（SearXNG 内置、无需 API key），
-  #               补上用不了 Google（机房 IP 必 CAPTCHA）留下的通用/事实检索盲区，
-  #               且设计为抗封锁、限流温和。
-  #   - wikipedia：稳定、几乎不被限流；事实型断言兜底（中文政策查询返回 0 条）。
-  #   - mojeek   ：英国独立爬虫索引（SearXNG 内置、无需 key），稳定不限流；
-  #               作为第二通用源扩覆盖。⚠️ 替下的 qwant 实测被上游「暂停服务: 拒绝访问」
-  #               （Qwant 拒绝 Render 机房 IP），在本部署下贡献 0 结果 → 弃用。
-  #   - 已移除 bing（中文政策查询出 vkvideo.ru 俄语视频垃圾）、baidu
-  #     （机房 IP 被百度风控出验证码，中文结果不稳定）、qwant（上游拒绝）。
-  #   - duckduckgo：实测持续「超时」（两次查询均在 unresponsive_engines）→ 弃用
-  #   - google   ：机房出口 IP 必被 CAPTCHA/429，从不加载
-  #
-  # 权重：brave 1.0（唯一官方政策源）> startpage 0.9（Google 级相关性）
-  #   > mojeek 0.8（稳定通用）> wikipedia 0.7（稳定兜底）。
+  # 2026-10-23 第五轮定稿（brave/yandex/yahoo/wikipedia）—— 依据枚举实测：
+  #   SearXNG 2026.10.19 上「引擎模块能否加载」与「能否出结果」逐一实测（增值税政策查询）：
+  #   - brave    1.0 ：能加载+能出结果，15/20 是 .gov.cn 官方政策原文（唯一有效来源）；
+  #                   缺点是 2~3 次查询即被限流「请求过于频繁」（熔断器兜）。
+  #   - yandex   0.8 ：能加载+能出结果（15 条），通用第二源。
+  #   - yahoo    0.7 ：能加载+能出结果（10 条），通用第三源。
+  #   - wikipedia 0.6：能加载+几乎不限流，事实型断言兜底。
+  #   ❌ 无法加载（模块启动即被静默丢弃，无报错日志）：startpage / mojeek / ecosia / marginalia
+  #      —— 用户此前指定的 startpage、mojeek 因此注定上不了线（用 engines= 参数探测会被
+  #         忽略并回退 brave，看起来"有结果"其实是 brave 的）。
+  #   ❌ 能加载但不能用：qwant（Qwant 上游拒 Render 机房 IP「暂停服务: 拒绝访问」）、
+  #      baidu（机房 IP 被百度风控出验证码）、bing（中文政策查询出 vkvideo.ru 俄语垃圾）、
+  #      duckduckgo（持续超时）、wikidata/wikibooks（实体库，政策查询 0 条）。
+  #   google：机房出口 IP 必被 CAPTCHA/429，从不加载。
   engines:
     keep_only:
       - brave
-      - wikipedia
-      - startpage
-      - mojeek
-      - qwant
-      - bing
-      - duckduckgo
-      - ecosia
-      - baidu
-      - yahoo
       - yandex
-      - wikidata
-      - wikibooks
-      - marginalia
+      - yahoo
+      - wikipedia
 
 general:
   debug: false
@@ -135,48 +121,18 @@ plugins:
 #   brave 是唯一能返回 .gov.cn 政策原文的引擎 → 权重最高，
 #   让它排在结果前面；被限流时由下面的熔断器 + Tavily 兜底，不拖垮核查链路。
 engines:
-  - name: brave
+  - name: brave           # 中文政策检索唯一有效来源（15/20 官方），但易被限流
     disabled: false
     weight: 1.0
-  - name: wikipedia
+  - name: yandex          # 通用第二源（实测 15 条结果）
     disabled: false
-    weight: 1.0
-  - name: startpage
+    weight: 0.8
+  - name: yahoo           # 通用第三源（实测 10 条结果）
     disabled: false
-    weight: 1.0
-  - name: mojeek
+    weight: 0.7
+  - name: wikipedia       # 稳定兜底，几乎不限流
     disabled: false
-    weight: 1.0
-  - name: qwant
-    disabled: false
-    weight: 1.0
-  - name: bing
-    disabled: false
-    weight: 1.0
-  - name: duckduckgo
-    disabled: false
-    weight: 1.0
-  - name: ecosia
-    disabled: false
-    weight: 1.0
-  - name: baidu
-    disabled: false
-    weight: 1.0
-  - name: yahoo
-    disabled: false
-    weight: 1.0
-  - name: yandex
-    disabled: false
-    weight: 1.0
-  - name: wikidata
-    disabled: false
-    weight: 1.0
-  - name: wikibooks
-    disabled: false
-    weight: 1.0
-  - name: marginalia
-    disabled: false
-    weight: 1.0
+    weight: 0.6
 
 # ============================================================
 # 本轮修改依据（2026-10-23 第二/三轮）
@@ -207,6 +163,13 @@ engines:
 #   同样靠 disabled:false 显式启用（mojeek 默认 disabled）。
 #   权重重排：brave 1.0 > startpage 0.9 > mojeek 0.8 > wikipedia 0.7。
 #
+# 引擎换血第五轮定稿（枚举实测后用户选定 brave/yandex/yahoo/wikipedia）：
+#   枚举配置（keep_only 14 候选）实测发现 startpage/mojeek/ecosia/marginalia 的引擎模块
+#   在 2026.10.19 无法加载（启动静默丢弃、无报错日志），此前"4 引擎配置上线只剩 2 个"即此因；
+#   能加载且能出结果的只有 brave/wikipedia/yahoo/yandex 四个 → 定稿。
+#   权重：brave 1.0 > yandex 0.8 > yahoo 0.7 > wikipedia 0.6。
+#   ⚠️ 教训：改引擎前先枚举验证模块可加载；"engines=参数返回结果"≠该引擎工作（被忽略回退）。
+#
 # ⚠️ 两个实测得来的判据（改引擎前必读）：
 #   1. engines 查询参数【是生效的】，但【未启用的引擎名会被静默忽略】并回退默认集。
 #      判据：请求 engines=baidu 时返回结果的 engines_seen 全是 bing。
@@ -214,4 +177,3 @@ engines:
 #   2. brave 被限流时返回的是"空结果 + unresponsive_engines 标注请求过于频繁"，
 #      不是 HTTP 错误。接入方（grounding.mjs / grounding.js）已按此处理。
 # ============================================================
-# ci: retrigger Render deploy (no-op) — 2026-10-23 16:0x
