@@ -33,7 +33,7 @@ use_default_settings:
       - brave
       - yandex
       - yahoo
-      - duckduckgo
+      - swisscows
 
 general:
   debug: false
@@ -134,10 +134,10 @@ engines:
   - name: yahoo           # 通用第三源（实测 10 条结果）
     disabled: false
     weight: 0.7
-  - name: duckduckgo      # 第六轮换入：独立索引补充；Render 出口易超时 → timeout 拉满
+  - name: swisscows       # 第八轮换入（2026-10-25）：海选中文质量最佳，接替 DDG
     disabled: false
+    inactive: false       # 上游标 inactive:true，不覆盖会被加载循环静默丢弃
     weight: 0.6
-    timeout: 8.0
 
 # ============================================================
 # 本轮修改依据（2026-10-23 第二/三轮）
@@ -213,3 +213,15 @@ engines:
 #   结论：36 引擎加载，16 个能出结果，对中文场景真正可用的 ≈8 个。
 #      DDG 替换首选 swisscows（瑞士公司、中英双通、结果对题）。
 # ============================================================
+
+# 引擎换血第八轮定稿（2026-10-25，常驻四引擎 = brave / yandex / yahoo / swisscows）：
+#   依据第七轮海选 + 用户拍板（brave 固定，其余三席由实测推荐）：
+#   - brave 1.0   独立索引，中文政策唯一稳定来源，易限流（熔断器 + Tavily 兜底）。
+#   - yandex 0.8  独立索引第二源，三轮实测零错误。
+#   - yahoo  0.7  每轮 10/10 零错误零限流；底层 bing 索引但模块拿的是真结果
+#                 （与 bing 模块自身被反爬喂垃圾是两回事）。
+#   - swisscows 0.6 海选中文质量最佳（19 条全对题），瑞士公司，四枪零错误；
+#                 必须 inactive:false 覆盖上游 inactive:true 标记。
+#   duckduckgo 移除：Render 出口 100% 超时（中英文、timeout 8.0 均无效），无缓解手段。
+#   落选说明：resulthunter 与 swisscows 同源索引（域名集一致，选之即重复）；
+#   privacywall 是 bing 皮且中文结果离题；bing 中文质量崩坏；bilibili 为垂直站。
