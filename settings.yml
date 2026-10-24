@@ -34,6 +34,7 @@ use_default_settings:
       - yandex
       - yahoo
       - swisscows
+      - bing
 
 general:
   debug: false
@@ -128,6 +129,9 @@ engines:
   - name: brave           # 中文政策检索唯一有效来源（15/20 官方），但易被限流
     disabled: false
     weight: 1.0
+  - name: bing            # 第九轮换入（2026-10-25）：UTF-8 复测 50/50 对题、税局官方源密度最高
+    disabled: false
+    weight: 0.8
   - name: yandex          # 通用第二源（实测 15 条结果）
     disabled: false
     weight: 0.8
@@ -225,3 +229,12 @@ engines:
 #   duckduckgo 移除：Render 出口 100% 超时（中英文、timeout 8.0 均无效），无缓解手段。
 #   落选说明：resulthunter 与 swisscows 同源索引（域名集一致，选之即重复）；
 #   privacywall 是 bing 皮且中文结果离题；bing 中文质量崩坏；bilibili 为垂直站。
+
+# 引擎换血第九轮（2026-10-25，常驻五引擎 = brave / bing / yandex / yahoo / swisscows）：
+#   加 bing：GBK 编码坑翻案后（本机 curl 直传中文按 GBK 发出，污染了此前所有中文质量结论），
+#   Python 正确 UTF-8 复测 bing 50/50 对题、税局官方源密度全场最高 → 与 yandex 并列权重 0.8。
+#   "bing 屏蔽 Render 出口 IP"判词作废：bing 一直可用，垃圾结果是编码 artifact。
+#   第 6 席备选结论（用户问，未启用）：resulthunter 与 swisscows 同源索引、privacywall
+#   与 bing 同源（GBK 测试中两者分别与 swisscows/bing 返回完全相同的域名集），
+#   加之即重复保险；bilibili 为垂直站。若要第 6 席建议 privacywall（bing 备胎价值）。
+#   停在 5 引擎的理由：每多一引擎每查询多一个超时尾巴（DDG 教训：5s→10s）。
