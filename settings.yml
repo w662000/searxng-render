@@ -30,49 +30,10 @@ use_default_settings:
   #   详见 engines 段与文件末尾「本轮修改依据」第六轮记录。
   engines:
     keep_only:
-      # —— 常驻四引擎 ——
       - brave
       - yandex
       - yahoo
       - duckduckgo
-      # —— 大厂/主流（默认 disabled，需显式启用）——
-      - google
-      - bing
-      - qwant
-      - startpage
-      - mojeek
-      - marginalia
-      - mwmbl
-      - swisscows
-      - dogpile
-      - yep
-      - luxxle
-      - vuhuv
-      - privacywall
-      - findborg
-      # —— 维基系 ——
-      - wikipedia
-      - wikidata
-      # —— 中文 ——
-      - baidu
-      - 360search
-      - sogou
-      - sogou wechat
-      - quark
-      - bilibili
-      - chinaso news
-      - naver
-      # —— 长尾独立 ——
-      - crowdview
-      - encyclosearch
-      - searchmysite
-      - wiby
-      - searchzee
-      - resulthunter
-      - fastbot
-      - gabanza
-      - ayo
-      - wolframalpha
 
 general:
   debug: false
@@ -160,108 +121,23 @@ plugins:
 # use_default_settings 下，这里的每条按 name 合并到官方默认引擎定义上
 # （settings_loader.py 的 engines 合并逻辑），所以只需写要改的键。
 #
-# ⚠️ 当前是【第七轮海选电池】临时配置（2026-10-24）：38 个候选全量启用，
-#    实测结束后回滚到常驻名单（备份见 .searx-settings-round6-backup.yml）。
-#    海选动机：第五轮"只有 4 个能加载"的结论有假阴性——上游对
-#    startpage/mojeek/marginalia/swisscows/dogpile/luxxle/findborg/chinaso
-#    打了 inactive:true 标记，searx/engines/__init__.py 的加载循环见到就
-#    continue（静默丢弃），并非模块坏掉；本段用 inactive:false 显式覆盖。
+# 权重依据同一轮实测（见文件头 keep_only 注释）：
+#   brave 是唯一能返回 .gov.cn 政策原文的引擎 → 权重最高，
+#   让它排在结果前面；被限流时由下面的熔断器 + Tavily 兜底，不拖垮核查链路。
 engines:
-  # —— 常驻四引擎（权重沿用第六轮）——
-  - name: brave
+  - name: brave           # 中文政策检索唯一有效来源（15/20 官方），但易被限流
     disabled: false
     weight: 1.0
-  - name: yandex
+  - name: yandex          # 通用第二源（实测 15 条结果）
     disabled: false
     weight: 0.8
-  - name: yahoo
+  - name: yahoo           # 通用第三源（实测 10 条结果）
     disabled: false
     weight: 0.7
-  - name: duckduckgo
+  - name: duckduckgo      # 第六轮换入：独立索引补充；Render 出口易超时 → timeout 拉满
     disabled: false
     weight: 0.6
     timeout: 8.0
-  # —— 主流候选（默认 disabled，显式启用）——
-  - name: google
-    disabled: false
-  - name: bing
-    disabled: false
-  - name: qwant
-    disabled: false
-  - name: mwmbl
-    disabled: false
-  - name: yep
-    disabled: false
-  - name: vuhuv
-    disabled: false
-  - name: privacywall
-    disabled: false
-  # —— 上游标 INACTIVE 的（必须 inactive:false 覆盖，否则加载循环直接跳过）——
-  - name: startpage
-    disabled: false
-    inactive: false
-  - name: mojeek
-    disabled: false
-    inactive: false
-  - name: marginalia
-    disabled: false
-    inactive: false
-  - name: swisscows
-    disabled: false
-    inactive: false
-  - name: dogpile
-    disabled: false
-    inactive: false
-  - name: luxxle
-    disabled: false
-    inactive: false
-  - name: findborg
-    disabled: false
-    inactive: false
-  - name: chinaso news
-    disabled: false
-    inactive: false
-  # —— 维基系 ——
-  - name: wikipedia
-    disabled: false
-  - name: wikidata
-    disabled: false
-  # —— 中文 ——
-  - name: baidu
-    disabled: false
-  - name: 360search
-    disabled: false
-  - name: sogou
-    disabled: false
-  - name: sogou wechat
-    disabled: false
-  - name: quark
-    disabled: false
-  - name: bilibili
-    disabled: false
-  - name: naver
-    disabled: false
-  # —— 长尾独立 ——
-  - name: crowdview
-    disabled: false
-  - name: encyclosearch
-    disabled: false
-  - name: searchmysite
-    disabled: false
-  - name: wiby
-    disabled: false
-  - name: searchzee
-    disabled: false
-  - name: resulthunter
-    disabled: false
-  - name: fastbot
-    disabled: false
-  - name: gabanza
-    disabled: false
-  - name: ayo
-    disabled: false
-  - name: wolframalpha
-    disabled: false
 
 # ============================================================
 # 本轮修改依据（2026-10-23 第二/三轮）
@@ -312,4 +188,28 @@ engines:
 #      所以"配了却没用上"这种事看不出报错，只能靠 engines_seen 字段验。
 #   2. brave 被限流时返回的是"空结果 + unresponsive_engines 标注请求过于频繁"，
 #      不是 HTTP 错误。接入方（grounding.mjs / grounding.js）已按此处理。
+# ============================================================
+
+# ============================================================
+# 引擎海选第七轮（2026-10-24，38 候选中英双语实测，commit ee8d8e8 临时上线后已回滚）：
+#   机制实锤：上游对 startpage/mojeek/marginalia/swisscows/dogpile/luxxle/findborg/
+#   chinaso 标 inactive:true，searx/engines/__init__.py 加载循环见之即 continue
+#   （=第五轮"模块无法加载"的真相，全是假阴性）；本文件 inactive:false 可强制加载，
+#   除 marginalia/searchzee 外全部加载成功（这两个模块真加载不了）。
+#   实测（EN: climate change impact / ZH: 个人所得税 专项附加扣除）：
+#   ✅ 中英都出结果：brave(24/25) bing(10/10) yahoo(10/10) yandex(10/15)
+#      swisscows(15/19) privacywall(10/10) resulthunter(19/20) bilibili(20/20)
+#   ⚠️ 仅英文出结果：startpage(10；中文验证码) mwmbl(50；小索引) sogou(10；中文崩溃)
+#      sogou wechat(10) 360search(3/7 弱) chinaso news(10；中文API错) naver(10) wiby(12)
+#   ❌ 拒绝访问(上游挡机房IP)：google qwant dogpile yep luxxle findborg fastbot searchmysite
+#      ｜ 验证码：baidu、startpage(中文) ｜ 超时：duckduckgo mojeek encyclosearch wolframalpha
+#      ｜ 坏：quark(意外崩溃) gabanza(SSL证书) marginalia/searchzee(模块加载不了)
+#      ｜ wikipedia 复测仍坏(EN 0条/ZH HTTP错)；vuhuv wikidata crowdview ayo 能加载但0条
+#   【质量抽查】ZH 查询下 bing/privacywall 返回的域名是 HLTV/healthline/liquipedia 等
+#      完全离题内容（privacywall 即 bing 皮的另一证据）——"能出结果"≠"结果可用"；
+#      swisscows/resulthunter 的 ZH 结果全是对题中文站（且两者域名集一致，
+#      resulthunter 疑似 swisscows 同源索引）。"bing 屏蔽 Render 出口 IP"不成立：
+#      bing 实际响应，问题是中文结果质量崩坏。
+#   结论：36 引擎加载，16 个能出结果，对中文场景真正可用的 ≈8 个。
+#      DDG 替换首选 swisscows（瑞士公司、中英双通、结果对题）。
 # ============================================================
