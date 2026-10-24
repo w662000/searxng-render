@@ -24,12 +24,16 @@ use_default_settings:
   #      baidu（机房 IP 被百度风控出验证码）、bing（中文政策查询出 vkvideo.ru 俄语垃圾）、
   #      duckduckgo（持续超时）、wikidata/wikibooks（实体库，政策查询 0 条）。
   #   google：机房出口 IP 必被 CAPTCHA/429，从不加载。
+  #
+  # 2026-10-24 第六轮：wikipedia 上线后实测报废（中文查询 HTTP 错误 / 英文 0 条），
+  #   换 duckduckgo（第五轮实测"能加载但持续超时"，用户知情指定换入）——
+  #   详见 engines 段与文件末尾「本轮修改依据」第六轮记录。
   engines:
     keep_only:
       - brave
       - yandex
       - yahoo
-      - wikipedia
+      - duckduckgo
 
 general:
   debug: false
@@ -130,9 +134,10 @@ engines:
   - name: yahoo           # 通用第三源（实测 10 条结果）
     disabled: false
     weight: 0.7
-  - name: wikipedia       # 稳定兜底，几乎不限流
+  - name: duckduckgo      # 第六轮换入：独立索引补充；Render 出口易超时 → timeout 拉满
     disabled: false
     weight: 0.6
+    timeout: 8.0
 
 # ============================================================
 # 本轮修改依据（2026-10-23 第二/三轮）
@@ -169,6 +174,13 @@ engines:
 #   能加载且能出结果的只有 brave/wikipedia/yahoo/yandex 四个 → 定稿。
 #   权重：brave 1.0 > yandex 0.8 > yahoo 0.7 > wikipedia 0.6。
 #   ⚠️ 教训：改引擎前先枚举验证模块可加载；"engines=参数返回结果"≠该引擎工作（被忽略回退）。
+#
+# 引擎换血第六轮（2026-10-24，wikipedia → duckduckgo）：
+#   wikipedia 复测报废：中文查询 unresponsive=["wikipedia","HTTP 错误"]，英文单独查询 0 条。
+#   换入 duckduckgo（权重 0.6）。第五轮枚举实测其"能加载但持续超时"，用户知情后仍指定换入，
+#   缓解：timeout: 8.0（≤ outgoing.max_request_timeout 上限）。
+#   use_mobile_ui 已核实【不存在】于当前 duckduckgo 模块（默认即走 html.duckduckgo.com
+#   no-JS 接口），不写无效字段。bing 维持移除（用户确认：bing 屏蔽 Render 出口 IP）。
 #
 # ⚠️ 两个实测得来的判据（改引擎前必读）：
 #   1. engines 查询参数【是生效的】，但【未启用的引擎名会被静默忽略】并回退默认集。
