@@ -232,8 +232,12 @@ engines:
 
 # 引擎换血第九轮（2026-10-25，常驻五引擎 = brave / bing / yandex / yahoo / swisscows）：
 #   加 bing：GBK 编码坑翻案后（本机 curl 直传中文按 GBK 发出，污染了此前所有中文质量结论），
-#   Python 正确 UTF-8 复测 bing 50/50 对题、税局官方源密度全场最高 → 与 yandex 并列权重 0.8。
+#   Python 正确 UTF-8 复测 bing 单测 10/10 对题（首条即 chinatax.gov.cn 政策法规库）→ 权重 0.8。
 #   "bing 屏蔽 Render 出口 IP"判词作废：bing 一直可用，垃圾结果是编码 artifact。
+#   ⚠️ 勘误：曾记"复测 50/50 对题"系踩了 engines= 回退坑——engines= 里带未启用引擎名会被
+#   静默回退到全部已启用引擎（当时 bing 未启用，那 50 条实为 brave25+yandex15+yahoo10 合集）。
+#   生产实测：bing 已入列并在混合查询正常出力（10 条/查询）；个别查询偶发挂起（单测 vat 查询
+#   一次 >40s、一次混合查询未出力且未标 unresponsive），五引擎冗余可容忍，观察即可。
 #   第 6 席备选结论（用户问，未启用）：resulthunter 与 swisscows 同源索引、privacywall
 #   与 bing 同源（GBK 测试中两者分别与 swisscows/bing 返回完全相同的域名集），
 #   加之即重复保险；bilibili 为垂直站。若要第 6 席建议 privacywall（bing 备胎价值）。
